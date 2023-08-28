@@ -7,8 +7,8 @@ export const connection = mysql.createConnection(
   Object.assign({ database: "user" }, mysqlConfig.mysql)
 );
 
-export function queryTable(s: string): void {
+export function queryTable(s: string, message: string): void {
   connection.query(s, (err) => {
-    err ? Logger.error(err) : Logger.info(`${s}表创建成功`);
+    err ? Logger.error(err) : Logger.info(message)
   });
 }

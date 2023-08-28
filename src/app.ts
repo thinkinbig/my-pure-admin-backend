@@ -13,6 +13,12 @@ class App {
     expressWs(this.app);
     // 支持json编码的主体
     this.app.use(bodyParser.json());
+    // // 支持表单编码的主体
+    // this.app.use(
+    //   multer({
+    //     dest: "upload_tmp/",
+    //   }).any()
+    // );
     // 支持编码的主体
     this.app.use(
       bodyParser.urlencoded({

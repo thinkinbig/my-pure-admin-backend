@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import secret from "../config";
+import * as http from "http";
 import * as mysql from "mysql2";
 import * as jwt from "jsonwebtoken";
 import { createHash } from "crypto";
@@ -9,6 +10,8 @@ import getFormatDate from "../utils/date";
 import { connection } from "../utils/mysql";
 import { Request, Response } from "express";
 import { createMathExpr } from "svg-captcha";
+import config from "../config";
+import { RequestOptions } from "http";
 
 const utils = require("@pureadmin/utils");
 
@@ -64,9 +67,12 @@ const login = async (req: Request, res: Response) => {
   // }
   // })
   const { username, password } = req.body;
+  const hashed_pwd = createHash("md5").update(password).digest("hex");
+  // 防止sql注入
   let sql: string =
-    "select * from users where username=" + "'" + username + "'";
-  connection.query(sql, async function (err, data: any) {
+    "select * from users where username=? and password=?";
+  const values = [username, hashed_pwd];
+  connection.query(sql, values, async function (err, data: any) {
     if (data.length == 0) {
       await res.json({
         success: false,
@@ -74,7 +80,7 @@ const login = async (req: Request, res: Response) => {
       });
     } else {
       if (
-        createHash("md5").update(password).digest("hex") == data[0].password
+        hashed_pwd == data[0].password
       ) {
         const accessToken = jwt.sign(
           {
@@ -168,8 +174,10 @@ const register = async (req: Request, res: Response) => {
       data: { message: Message[4] },
     });
   let sql: string =
-    "select * from users where username=" + "'" + username + "'";
-  connection.query(sql, async (err, data: any) => {
+    "select * from users where username=? and password=?";
+  const hashed_pwd = createHash("md5").update(password).digest("hex");
+  const values = [username, hashed_pwd];
+  connection.query(sql, values, async (err, data: any) => {
     if (data.length > 0) {
       await res.json({
         success: false,
@@ -177,21 +185,9 @@ const register = async (req: Request, res: Response) => {
       });
     } else {
       let time = await getFormatDate();
-      let sql: string =
-        "insert into users (username,password,time) value(" +
-        "'" +
-        username +
-        "'" +
-        "," +
-        "'" +
-        createHash("md5").update(password).digest("hex") +
-        "'" +
-        "," +
-        "'" +
-        time +
-        "'" +
-        ")";
-      connection.query(sql, async function (err) {
+      const sql = "insert into users (username,password,time) value(?,?,?)";
+      const values = [username, hashed_pwd, time];
+      connection.query(sql, values, async function (err) {
         if (err) {
           Logger.error(err);
         } else {
@@ -224,17 +220,11 @@ const register = async (req: Request, res: Response) => {
 const updateList = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { username } = req.body;
-  let payload = null;
-  try {
-    const authorizationHeader = req.get("Authorization") as string;
-    const accessToken = authorizationHeader.substr("Bearer ".length);
-    payload = jwt.verify(accessToken, secret.jwtSecret);
-  } catch (error) {
-    return res.status(401).end();
-  }
+  verifyToken(req, res);
   let modifySql: string = "UPDATE users SET username = ? WHERE id = ?";
-  let sql: string = "select * from users where id=" + id;
-  connection.query(sql, function (err, data) {
+  let sql: string = "select * from users where id=?";
+  let values = [id];
+  connection.query(sql, values, function (err, data) {
     connection.query(sql, function (err) {
       if (err) {
         Logger.error(err);
@@ -273,16 +263,10 @@ const updateList = async (req: Request, res: Response) => {
 
 const deleteList = async (req: Request, res: Response) => {
   const { id } = req.params;
-  let payload = null;
-  try {
-    const authorizationHeader = req.get("Authorization") as string;
-    const accessToken = authorizationHeader.substr("Bearer ".length);
-    payload = jwt.verify(accessToken, secret.jwtSecret);
-  } catch (error) {
-    return res.status(401).end();
-  }
-  let sql: string = "DELETE FROM users where id=" + "'" + id + "'";
-  connection.query(sql, async function (err, data) {
+  verifyToken(req, res);
+  const sql: string = "DELETE FROM users where id=?";
+  const values = [id];
+  connection.query(sql, values, async function (err, data) {
     if (err) {
       console.log(err);
     } else {
@@ -316,17 +300,10 @@ const deleteList = async (req: Request, res: Response) => {
 
 const searchPage = async (req: Request, res: Response) => {
   const { page, size } = req.body;
-  let payload = null;
-  try {
-    const authorizationHeader = req.get("Authorization") as string;
-    const accessToken = authorizationHeader.substr("Bearer ".length);
-    payload = jwt.verify(accessToken, secret.jwtSecret);
-  } catch (error) {
-    return res.status(401).end();
-  }
-  let sql: string =
-    "select * from users limit " + size + " offset " + size * (page - 1);
-  connection.query(sql, async function (err, data) {
+  verifyToken(req, res);
+  const sql = "SELECT * FROM users limit ? offset ?";
+  const values = [size, size * (page - 1)];
+  connection.query(sql, values, async function (err, data) {
     if (err) {
       Logger.error(err);
     } else {
@@ -359,32 +336,23 @@ const searchPage = async (req: Request, res: Response) => {
 
 const searchVague = async (req: Request, res: Response) => {
   const { username } = req.body;
-  let payload = null;
-  try {
-    const authorizationHeader = req.get("Authorization") as string;
-    const accessToken = authorizationHeader.substr("Bearer ".length);
-    payload = jwt.verify(accessToken, secret.jwtSecret);
-  } catch (error) {
-    return res.status(401).end();
-  }
+  verifyToken(req, res);
   if (username === "" || username === null)
     return res.json({
       success: false,
       data: { message: Message[9] },
     });
-  let sql: string = "select * from users";
-  sql += " WHERE username LIKE " + mysql.escape("%" + username + "%");
-  connection.query(sql, function (err, data) {
-    connection.query(sql, async function (err) {
-      if (err) {
-        Logger.error(err);
-      } else {
-        await res.json({
-          success: true,
-          data,
-        });
-      }
-    });
+  let sql = "SELECT * FROM users WHERE username LIKE ?";
+  let values =[mysql.escape("%" + username + "%")];
+  connection.query(sql, values,  function (err, data) {
+    if (err) {
+      Logger.error(err);
+    } else {
+      res.json({
+        success: true,
+        data,
+      });
+    }
   });
 };
 
@@ -458,6 +426,77 @@ const captcha = async (req: Request, res: Response) => {
   res.json({ success: true, data: { text: create.text, svg: create.data } });
 };
 
+
+const insertUserLoginHistory = async (req: Request, res: Response) => {
+  const {username} = req.body;
+  const sql =
+    "INSERT INTO user_login_history (user_id, login_time) " +
+    "SELECT id, ? FROM users WHERE username = ?";
+  let time = await getFormatDate();
+  const values = [time, username];
+  connection.query(sql, values, (err) => {
+    if (err) {
+      Logger.error(err);
+      res.json({ success: false, data: { message: err } });
+    }
+  });
+};
+
+const getUserLoginHistory = async (req: Request, res: Response) => {
+  const sql = "SELECT ulh.id, u.username, ulh.login_time FROM user_login_history ulh JOIN users u ON ulh.user_id = u.id";
+  connection.query(sql, (err, data) => {
+    if (err) {
+      Logger.error(err);
+      res.json({ success: false, data: { message: err } });
+    } else {
+      res.json({ success: true, data });
+    }
+  });
+};
+
+const verifyToken = async (req: Request, res: Response) => {
+  let payload = null;
+  try {
+    const authorizationHeader = req.get("Authorization") as string;
+    const accessToken = authorizationHeader.substr("Bearer ".length);
+    payload = jwt.verify(accessToken, secret.jwtSecret);
+  } catch (error) {
+    res.status(401);
+    return res.json({ success: false, data: { message: Message[14] } });
+  }
+  return res.json({ success: true, data: { message: Message[13] } });
+};
+
+const forward = async (req: Request, res: Response) => {
+  const { hostname, port } = config.remote;
+  const options: RequestOptions = {
+    hostname,
+    port,
+    path: req.url,
+    method: req.method,
+    headers: req.headers,
+  };
+  const request = http.request(options, (response) => {
+    response.pipe(res);
+  });
+  request.write(JSON.stringify(req.body));
+  request.on("error", (e) => {
+    console.log(`problem with request: ${e.message}`);
+  });
+  request.end();
+};
+
+const clearUploadTmp = async () => {
+  fs.readdir("./upload_tmp", (err, files) => {
+    if (err) throw err;
+    for (const file of files) {
+      fs.unlink("./upload_tmp/" + file, (err) => {
+        if (err) throw err;
+      });
+    }
+  });
+};
+
 export {
   login,
   register,
@@ -467,4 +506,7 @@ export {
   searchVague,
   upload,
   captcha,
+  insertUserLoginHistory,
+  getUserLoginHistory,
+  verifyToken,
 };

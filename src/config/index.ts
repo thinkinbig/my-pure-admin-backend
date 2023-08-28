@@ -54,7 +54,7 @@ export default {
     host: "localhost",
     charset: "utf8_general_ci",
     user: "root",
-    password: "123456789",
+    password: "example",
   },
   mongodb: {},
   sqlite: {},
@@ -64,5 +64,9 @@ export default {
   emails: {
     apiKey: process.env.MAILGUN_API_KEY,
     domain: process.env.MAILGUN_DOMAIN,
+  },
+  remote: {
+    hostname: process.env.FORWARD_HOST,
+    port: process.env.FORWARD_PORT,
   },
 };
